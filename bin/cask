@@ -44,7 +44,8 @@ CASK_BIN_DIRECTORY = os.path.dirname(CASK)
 CASK_DIRECTORY = os.path.dirname(CASK_BIN_DIRECTORY)
 
 # Get the byte-string process environment
-ENVB = getattr(os, 'environb', os.environ)
+# use os.environ directly, but still name it to ENVB for history reason.
+ENVB = os.environ
 
 # Regular expression to extract the version number from emacs --version
 VERSION_RE = re.compile(r'^GNU Emacs (?P<version>\d+(?:\.\d+)*)$', re.MULTILINE)
