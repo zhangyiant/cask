@@ -47,36 +47,6 @@ CASK_DIRECTORY = os.path.dirname(CASK_BIN_DIRECTORY)
 ENV = os.environ
 ENVB = ENV
 
-# Regular expression to extract the version number from emacs --version
-VERSION_RE = re.compile(r'^GNU Emacs (?P<version>\d+(?:\.\d+)*)$', re.MULTILINE)
-
-# The minimum support Emacs version
-MIN_EMACS_VERSION = (24,)
-
-# Various Emacs locations on OS X.  We use these to try and find a better Emacs
-# when the default Emacs is not supported.
-OSX_EMACSEN = [
-    # Emacs.app at various places
-    os.path.expanduser('~/Applications/Emacs.app/Contents/MacOS/Emacs'),
-    '/Applications/Emacs.app/Contents/MacOS/Emacs',
-    # Homebrew'ed Emacs
-    '/usr/local/bin/emacs',
-]
-
-
-class UnsupportedEmacsVersionError(Exception):
-    """An exception indicating an unsupported Emacs version.
-
-    The ``actual_version`` attribute provides the actual version of the
-    affected Emacs as tuple of integers.  The ``expected_version`` attribute
-    provides the expected version in the same type.
-
-    """
-    def __init__(self, actual_version, expected_version):
-        Exception.__init__(self)
-        self.actual_version = actual_version
-        self.expected_version = expected_version
-
 
 class MissingEmacsError(Exception):
     """An exception indicating that Emacs is missing.
@@ -120,40 +90,6 @@ class ExecCommandError(Exception):
         self.real_error = real_error
 
 
-def is_executable_file(path):
-    """Determine whether ``path`` is an executable file.
-
-    ``path`` is a string containing the path to test.
-
-    Return ``True``, if ``path`` is executable, or ``False`` otherwise.
-
-    """
-    return os.path.isfile(path) and os.access(path, os.X_OK)
-
-
-def parse_version(version_string):
-    """Parse a version ``version_string``.
-
-    ``version_string`` is a string containing a simple version number, where
-    all parts are nummeric, and separated by a dot.
-
-    Return a tuple with the parsed version.  The length of the tuple is equal
-    to the number of parts in ``version_string``.  Raise ``ValueError`` if no
-    version could be parsed from ``version_string``.
-
-    """
-    return tuple(int(part) for part in version_string.split('.'))
-
-
-def format_version(version):
-    """Format a ``version`` into a human-readable string.
-
-    ``version`` is a tuple of integral components.
-
-    Return a string representing ``version``."""
-    return '.'.join(str(part) for part in version)
-
-
 def get_cask_path(kind):
     """Get the Cask package environment path of the given ``kind``.
 
@@ -169,87 +105,6 @@ def get_cask_path(kind):
     process = subprocess.Popen([sys.executable, CASK, kind], stdout=subprocess.PIPE)
     stdout, _ = process.communicate()
     return stdout.rstrip()
-
-
-def get_emacs_version(emacs):
-    """Determine the version of the Emacs executable denoted by ``emacs``.
-
-    ``emacs`` is a string containing the path to an Emacs executable.
-
-    Return the version of ``emacs`` as tuple of integers.  Raise
-    ``ValueError``, if the version of ``emacs`` could not be determined,
-    e.g. because ``emacs`` was not a valid Emacs executable.  Raise
-    ``OSError``, if ``emacs`` did not refer to an existing executable file.
-    """
-    cmd = [emacs, '--version']
-    try:
-        process = subprocess.Popen(cmd,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   universal_newlines=True)
-        stdout, _ = process.communicate()
-    except OSError as error:
-        if error.errno == errno.ENOENT:
-            raise MissingEmacsError(emacs)
-        else:
-            raise EmacsCommandError(cmd, error)
-    else:
-        version = VERSION_RE.search(stdout)
-        if not version:
-            raise ValueError(
-                'Could not determine the version of Emacs at {0}'.format(emacs))
-        else:
-            return parse_version(version.group('version'))
-
-
-def is_supported_emacs(emacs):
-    """Determine whether Cask supports the given ``emacs``.
-
-    ``emacs`` is a string containing the path to an Emacs executable.
-
-    Return ``True``, if Cask supports the version of ``emacs``.  Raise
-    ``ValueError``, if the version of ``emacs`` could not be determined,
-    e.g. because ``emacs`` was not a valid Emacs executable.  Raise
-    ``OSError``, if ``emacs`` did not refer to an existing executable file.
-
-    """
-    return get_emacs_version(emacs) >= MIN_EMACS_VERSION
-
-
-def ensure_supported_emacs(emacs):
-    """Ensure that ``emacs`` is an existing and supported Emacs version.
-
-    ``emacs`` is a string containing the path to an Emacs executable.
-
-    Raise ``UnsupportedEmacsVersionError`` if the Emacs executable is not a
-    supported Emacs version.  Raise ``ValueError``, if the version of ``emacs``
-    could not be determined, e.g. because ``emacs`` was not a valid Emacs
-    executable.  Raise ``OSError``, if ``emacs`` did not refer to an existing
-    executable file.
-
-    """
-    if not is_supported_emacs(emacs):
-        raise UnsupportedEmacsVersionError(get_emacs_version(emacs),
-                                           MIN_EMACS_VERSION)
-
-
-def find_best_emacs():
-    """Find the best Emacs executable for the current platform.
-
-    On OS X, try hard to avoid the system's default Emacs, which Cask does not
-    support, and look for third-party Emacs installations at various places.
-    On any other system, just use the default Emacs.
-
-    Return the name or path for the best Emacs command for the current platform
-    as string.
-
-    """
-    if sys.platform == 'darwin' and not is_supported_emacs('emacs'):
-        suitable_candidates = (e for e in OSX_EMACSEN if
-                               is_executable_file(e) and is_supported_emacs(e))
-        return next(suitable_candidates, 'emacs')
-    else:
-        return 'emacs'
 
 
 def get_emacs_from_env():
@@ -268,16 +123,12 @@ def get_cask_emacs():
     """Get the Emacs executable to use for Cask.
 
     If an Emacs is defined by the environment (see ``get_emacs_from_env``) use
-    that, or automatically find a good Emacs for the current platform (see
-    ``find_best_emacs``).
+    that, or use 'emacs' directly.
 
     Return the name or path for the Emacs command Cask shall use as string.
-    Raise ``UnsupportedEmacsVersionError``, if the Emacs command does not meet
-    the minimum version requirements of Cask.
 
     """
-    emacs = get_emacs_from_env() or find_best_emacs()
-    ensure_supported_emacs(emacs)
+    emacs = get_emacs_from_env() or 'emacs'
     return emacs
 
 
@@ -383,10 +234,6 @@ def main():
             exec_cask(sys.argv[1:])
     except OSError as error:
         exit_error(error)
-    except UnsupportedEmacsVersionError as error:
-        exit_error('Emacs {0} required, yours is Emacs {1}.'.format(
-            format_version(error.expected_version),
-            format_version(error.actual_version)))
     except MissingEmacsError as error:
         exit_error('Emacs does not exist at {0}.  Did you install Emacs?'.format(
             error.emacs))
